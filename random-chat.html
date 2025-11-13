@@ -212,6 +212,65 @@
         color: #6b7280;
         margin-top: 12px;
       }
+
+      .hi-sidebar {
+        position: fixed;
+        top: 50%;
+        right: 1.5rem;
+        transform: translateY(-50%);
+        width: 240px;
+        background: #ffffff;
+        border-radius: 22px;
+        border: 1px solid #e2e8f0;
+        padding: 1.5rem;
+        z-index: 999;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        box-shadow: 0 12px 40px rgba(15, 23, 42, 0.2);
+      }
+
+      .hi-sidebar__badge {
+        display: inline-flex;
+        align-items: center;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-weight: 600;
+        color: #0ea5e9;
+      }
+
+      .hi-sidebar__title {
+        margin: 0;
+        font-size: 1.25rem;
+        color: #111;
+      }
+
+      .hi-sidebar__text {
+        margin: 0;
+        color: #4b5563;
+        font-size: 0.95rem;
+        line-height: 1.4;
+      }
+
+      .hi-sidebar__cta {
+        align-self: flex-start;
+        border-radius: 999px;
+        padding-inline: 1.4rem;
+        text-decoration: none;
+      }
+
+      @media (max-width: 992px) {
+        .hi-sidebar {
+          width: auto;
+          min-width: 220px;
+          bottom: 1.5rem;
+          top: auto;
+          right: 1rem;
+          transform: none;
+          padding: 1.1rem 1.25rem;
+        }
+      }
     </style>
   </head>
   <body>
@@ -585,5 +644,18 @@
         })
       })()
     </script>
+    <aside class="hi-sidebar">
+      <div class="hi-sidebar__badge">제작자</div>
+      <h3 class="hi-sidebar__title">"HI" 인사하기</h3>
+      <p class="hi-sidebar__text">서비스 제작자(py9245)에게 궁금한 점이나 응원 메시지를 바로 남겨보세요.</p>
+      <a
+        class="hi-sidebar__cta btn btn-success btn-sm"
+        href="https://meeting.ssafy.com/s14public/messages/@py9245"
+        target="_blank"
+        rel="noopener"
+      >
+        메세지 보내기
+      </a>
+    </aside>
   </body>
 </html>
