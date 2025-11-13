@@ -254,14 +254,14 @@
         const STATE_LIMIT = 60
         const determineApiBase = () => {
           if (window.API_BASE_URL) return window.API_BASE_URL
-          const host = window.location.hostname || ''
-          if (host.endsWith('github.io')) {
+          const host = (window.location.hostname || '').toLowerCase()
+          if (host.includes('github.io') || host.includes('githubusercontent.com')) {
             return 'https://15-164-232-40.nip.io/api'
           }
           if (window.location.origin) {
             return `${window.location.origin}/api`
           }
-          return '/api'
+          return 'https://15-164-232-40.nip.io/api'
         }
         const API_BASE_URL = determineApiBase().replace(/\/$/, '')
 
