@@ -349,10 +349,26 @@
       </section>
     </div>
 
-        <script>
+    <script>
       const TOKEN_KEY = 'codex_auth_token'
       const STATE_LIMIT = 60
       const PHONE_PATTERN = /010-\d{4}-\d{4}/
+
+      const determineBackendOrigin = () => {
+        if (window.API_BASE_URL) {
+          try {
+            return new URL(window.API_BASE_URL, window.location.origin).origin
+          } catch {
+            // fall through
+          }
+        }
+        const host = (window.location.hostname || '').toLowerCase()
+        if (host.includes('github.io') || host.includes('githubusercontent.com')) {
+          return 'https://15-164-232-40.nip.io'
+        }
+        return window.location.origin || 'https://15-164-232-40.nip.io'
+      }
+      const BACKEND_ORIGIN = determineBackendOrigin().replace(/\/$/, '')
 
       ;(() => {
         const participantTotalEl = document.getElementById('participant-total')
@@ -401,9 +417,9 @@
         }
 
         const buildWsUrl = () => {
-          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-          const base = `${protocol}://${window.location.host}`
-          return `${base}/ws/random-chat/?token=${encodeURIComponent(token)}`
+          const protocol = BACKEND_ORIGIN.startsWith('https') ? 'wss' : 'ws'
+          const host = BACKEND_ORIGIN.replace(/^https?:\/\//, '')
+          return `${protocol}://${host}/ws/random-chat/?token=${encodeURIComponent(token)}`
         }
 
         const connectSocket = () => {
