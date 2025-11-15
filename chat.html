@@ -248,7 +248,7 @@
 
       <section class="panel">
         <h2>대화 목록</h2>
-        <p class="panel-note">0.5초마다 자동으로 최신 메시지를 불러옵니다.</p>
+        <p class="panel-note">WebSocket 실시간 연결로 새 메시지가 자동으로 표시됩니다.</p>
         <p class="status-text" id="status-text">최근 대화 불러오는 중...</p>
         <div class="messages" id="chat-messages"></div>
         <p class="empty" id="empty-state" hidden>아직 대화가 없습니다. 첫 메시지를 남겨보세요!</p>
@@ -281,8 +281,15 @@
     <script>
       ;(() => {
         const TOKEN_STORAGE_KEY = 'codex_auth_token'
-        const CHAT_LIMIT = 80
-        const POLL_INTERVAL = 500
+        const DEFAULT_ROOM_NAME = '오픈 라운지'
+        const HISTORY_LIMIT = 80
+        const RECONNECT_DELAY = 3000
+        const STATUS_MESSAGES = {
+          idle: '실시간 연결을 준비 중입니다.',
+          connecting: '채팅방 실시간 연결 중...',
+          open: '실시간 연결이 완료되었습니다. 새 메시지는 자동으로 표시됩니다.',
+          closed: '실시간 연결이 종료되었습니다. 재연결을 시도합니다...',
+        }
 
         const chatMessagesEl = document.getElementById('chat-messages')
         const emptyStateEl = document.getElementById('empty-state')
@@ -299,8 +306,12 @@
 
         let token = null
         let currentUser = null
-        let pollTimer = null
-        let isLoading = false
+        let currentRoom = null
+        let ws = null
+        let wsState = 'idle'
+        let shouldReconnect = false
+        let reconnectTimer = null
+        let messageList = []
 
         const resolveRuntimeBase = () => {
           if (window.API_BASE_URL) return window.API_BASE_URL
@@ -316,6 +327,20 @@
         const API_BASE_URL = resolveRuntimeBase().replace(/\/$/, '')
         const buildUrl = (path) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
 
+        const determineWsOrigin = () => {
+          try {
+            const url = new URL(API_BASE_URL, window.location.origin)
+            const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+            return `${protocol}//${url.host}`
+          } catch {
+            if (!window.location?.host) return null
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+            return `${protocol}//${window.location.host}`
+          }
+        }
+
+        const WS_ORIGIN = determineWsOrigin()
+
         const readToken = () => {
           try {
             token = window.localStorage?.getItem(TOKEN_STORAGE_KEY) || null
@@ -330,14 +355,42 @@
           el.hidden = !shouldShow
         }
 
-        const renderMessages = (messages) => {
+        const setTextOrHide = (el, message) => {
+          if (!el) return
+          if (!message) {
+            el.textContent = ''
+            el.hidden = true
+            return
+          }
+          el.textContent = message
+          el.hidden = false
+        }
+
+        const setStatusText = (message) => {
+          if (statusTextEl) {
+            statusTextEl.textContent = message || ''
+          }
+        }
+
+        const setChatError = (message) => setTextOrHide(chatErrorEl, message)
+        const setFormError = (message) => setTextOrHide(formErrorEl, message)
+
+        const shouldStickToBottom = () => {
+          if (!chatMessagesEl) return false
+          const distance = chatMessagesEl.scrollHeight - (chatMessagesEl.scrollTop + chatMessagesEl.clientHeight)
+          return distance < 40
+        }
+
+        const renderMessageList = ({ forceScroll = false } = {}) => {
+          if (!chatMessagesEl) return
+          const stick = forceScroll || shouldStickToBottom()
           chatMessagesEl.innerHTML = ''
-          if (!messages.length) {
+          if (!messageList.length) {
             setElementVisibility(emptyStateEl, true)
             return
           }
           setElementVisibility(emptyStateEl, false)
-          messages.forEach((message) => {
+          messageList.forEach((message) => {
             const wrapper = document.createElement('article')
             wrapper.className = 'message'
 
@@ -367,151 +420,310 @@
             wrapper.appendChild(body)
             chatMessagesEl.appendChild(wrapper)
           })
-          chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight
-        }
-
-        const handleFetchError = (targetEl, message, error) => {
-          console.error(message, error)
-          if (targetEl) {
-            targetEl.textContent = message
-            setElementVisibility(targetEl, true)
+          if (stick) {
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight
           }
         }
 
-        const loadChatMessages = async ({ silent = false } = {}) => {
-          if (isLoading) return
-          isLoading = true
-          if (!silent) {
-            statusTextEl.textContent = '대화를 불러오는 중...'
-          }
-          setElementVisibility(chatErrorEl, false)
-          try {
-            const response = await fetch(buildUrl(`/chat/messages?limit=${CHAT_LIMIT}`), {
-              headers: { Accept: 'application/json', ...(token ? { Authorization: `Token ${token}` } : {}) },
-            })
-            if (!response.ok) {
-              throw new Error(`채팅 조회 실패 (${response.status})`)
-            }
-            const payload = await response.json()
-            renderMessages(Array.isArray(payload?.messages) ? payload.messages : [])
-            const now = new Date()
-            statusTextEl.textContent = `마지막 업데이트: ${now.toLocaleTimeString('ko-KR')}`
-          } catch (error) {
-            handleFetchError(chatErrorEl, '채팅 데이터를 불러오지 못했습니다.', error)
-          } finally {
-            isLoading = false
-          }
+        const resetMessages = () => {
+          messageList = []
+          renderMessageList({ forceScroll: true })
         }
 
-        const stopPolling = () => {
-          if (pollTimer) {
-            clearInterval(pollTimer)
-            pollTimer = null
-          }
+        const updateSendAvailability = () => {
+          const canSend =
+            Boolean(currentUser && token && currentRoom && wsState === 'open' && textareaEl.value.trim())
+          sendBtnEl.disabled = !canSend
         }
 
-        const startPolling = () => {
-          stopPolling()
-          pollTimer = window.setInterval(() => loadChatMessages({ silent: true }), POLL_INTERVAL)
-        }
-
-        const updateFormState = () => {
-          const enabled = Boolean(currentUser)
-          textareaEl.disabled = !enabled
-          anonCheckboxEl.disabled = !enabled
-          sendBtnEl.disabled = !enabled || !textareaEl.value.trim()
-          setElementVisibility(loginNoticeEl, !enabled)
-          setElementVisibility(profileBoxEl, enabled)
-          if (enabled && currentUser) {
+        const syncFormState = () => {
+          const isLoggedIn = Boolean(currentUser && token)
+          textareaEl.disabled = !isLoggedIn
+          anonCheckboxEl.disabled = !isLoggedIn
+          setElementVisibility(loginNoticeEl, !isLoggedIn)
+          setElementVisibility(profileBoxEl, isLoggedIn)
+          if (isLoggedIn && profileBoxEl) {
             profileBoxEl.textContent = `${currentUser.username} 님으로 접속 중입니다. (${currentUser.email || '이메일 정보 없음'})`
+          } else if (profileBoxEl) {
+            profileBoxEl.textContent = ''
           }
+          updateSendAvailability()
+        }
+
+        const setRealtimeState = (state, detail) => {
+          wsState = state
+          setStatusText(detail || STATUS_MESSAGES[state] || '')
+          updateSendAvailability()
+        }
+
+        const apiRequest = async (path, { method = 'GET', body } = {}) => {
+          const headers = { Accept: 'application/json' }
+          if (body !== undefined) {
+            headers['Content-Type'] = 'application/json'
+          }
+          if (token) {
+            headers.Authorization = `Token ${token}`
+          }
+          const response = await fetch(buildUrl(path), {
+            method,
+            headers,
+            body: body !== undefined ? JSON.stringify(body) : undefined,
+          })
+          const rawText = await response.text()
+          let payload = null
+          if (rawText) {
+            try {
+              payload = JSON.parse(rawText)
+            } catch {
+              payload = null
+            }
+          }
+          if (!response.ok) {
+            const message = payload?.detail || `요청에 실패했습니다. (${response.status})`
+            const error = new Error(message)
+            error.payload = payload
+            error.status = response.status
+            throw error
+          }
+          return payload
         }
 
         const fetchProfile = async () => {
           if (!token) {
             currentUser = null
-            updateFormState()
+            syncFormState()
             return
           }
           try {
-            const response = await fetch(buildUrl('/auth/profile'), {
-              headers: {
-                Accept: 'application/json',
-                Authorization: `Token ${token}`,
-              },
-            })
-            if (!response.ok) {
-              throw new Error('프로필 확인 실패')
-            }
-            const payload = await response.json()
-            currentUser = payload?.user ?? null
+            const payload = await apiRequest('/accounts/profile')
+            const profile = payload?.profile
+            currentUser = profile?.user || null
           } catch (error) {
-            console.warn('토큰 확인 실패', error)
+            console.warn('프로필 확인 실패', error)
             currentUser = null
+            setChatError('로그인 정보가 만료되었습니다. 다시 로그인해 주세요.')
+            try {
+              window.localStorage?.removeItem(TOKEN_STORAGE_KEY)
+            } catch {
+              // ignore
+            }
             token = null
           } finally {
-            updateFormState()
+            syncFormState()
           }
         }
 
-        const submitChat = async (event) => {
+        const ensurePublicRoom = async () => {
+          setStatusText('채팅방 정보를 불러오는 중입니다...')
+          const payload = await apiRequest('/chat/rooms')
+          const rooms = Array.isArray(payload?.rooms) ? payload.rooms : []
+          if (!rooms.length) {
+            throw new Error('입장 가능한 공개 채팅방이 없습니다.')
+          }
+          let target =
+            rooms.find((room) => room.name === DEFAULT_ROOM_NAME) ||
+            rooms.find((room) => !room.is_private) ||
+            rooms[0]
+          if (!target) {
+            throw new Error('채팅방을 찾지 못했습니다.')
+          }
+          if (target.is_member) {
+            return target
+          }
+          const joinPayload = await apiRequest('/chat/rooms/join', {
+            method: 'POST',
+            body: { name: target.name },
+          })
+          return joinPayload?.room || target
+        }
+
+        const buildWsUrl = () => {
+          if (!WS_ORIGIN || !currentRoom || !token) {
+            return null
+          }
+          return `${WS_ORIGIN}/ws/chatrooms/${currentRoom.id}/?token=${encodeURIComponent(token)}`
+        }
+
+        const scheduleReconnect = () => {
+          if (reconnectTimer) return
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null
+            if (shouldReconnect && token && currentRoom) {
+              connectSocket()
+            }
+          }, RECONNECT_DELAY)
+        }
+
+        const disconnectSocket = (resetState = true) => {
+          shouldReconnect = false
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer)
+            reconnectTimer = null
+          }
+          if (ws) {
+            try {
+              ws.close()
+            } catch {
+              // ignore
+            }
+            ws = null
+          }
+          if (resetState) {
+            setRealtimeState('idle')
+          }
+        }
+
+        const handleSocketMessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            if (data.event === 'history') {
+              messageList = Array.isArray(data.messages) ? data.messages.slice(-HISTORY_LIMIT) : []
+              renderMessageList({ forceScroll: true })
+              setChatError('')
+            } else if (data.event === 'message') {
+              if (data.message) {
+                messageList = [...messageList, data.message].slice(-HISTORY_LIMIT)
+                renderMessageList()
+              }
+            } else if (data.event === 'error') {
+              setChatError(data.detail || '실시간 채팅 오류가 발생했습니다.')
+            }
+          } catch (error) {
+            console.error('WebSocket 메시지를 파싱하지 못했습니다.', error)
+          }
+        }
+
+        const connectSocket = () => {
+          if (!token || !currentRoom) return
+          const url = buildWsUrl()
+          if (!url) {
+            setChatError('WebSocket 엔드포인트를 계산하지 못했습니다.')
+            return
+          }
+          disconnectSocket(false)
+          shouldReconnect = true
+          setRealtimeState('connecting')
+          ws = new WebSocket(url)
+          ws.addEventListener('open', () => {
+            setRealtimeState('open')
+            try {
+              ws.send(JSON.stringify({ action: 'fetch_history' }))
+            } catch (error) {
+              console.error('히스토리 요청 실패', error)
+            }
+          })
+          ws.addEventListener('message', handleSocketMessage)
+          ws.addEventListener('close', () => {
+            ws = null
+            if (shouldReconnect && token && currentRoom) {
+              setRealtimeState('closed')
+              scheduleReconnect()
+            } else {
+              setRealtimeState('idle')
+            }
+          })
+          ws.addEventListener('error', (event) => {
+            console.error('WebSocket error', event)
+            setChatError('실시간 연결에 문제가 발생했습니다.')
+          })
+        }
+
+        const sendRealtimeAction = (payload) => {
+          if (!ws || ws.readyState !== WebSocket.OPEN) {
+            connectSocket()
+            setChatError('실시간 연결을 준비 중입니다. 잠시 후 다시 시도해 주세요.')
+            return false
+          }
+          ws.send(JSON.stringify(payload))
+          return true
+        }
+
+        const submitChat = (event) => {
           event.preventDefault()
-          setElementVisibility(formErrorEl, false)
+          setFormError('')
+          setChatError('')
           if (!currentUser || !token) {
-            handleFetchError(formErrorEl, '로그인 후 이용해 주세요.', null)
+            setFormError('로그인 후 이용해 주세요.')
+            return
+          }
+          if (!currentRoom) {
+            setFormError('입장 가능한 채팅방이 없습니다.')
             return
           }
           const content = textareaEl.value.trim()
           if (!content) {
-            handleFetchError(formErrorEl, '메시지를 입력해 주세요.', null)
+            setFormError('메시지를 입력해 주세요.')
+            updateSendAvailability()
             return
           }
-          sendBtnEl.disabled = true
-          try {
-            const response = await fetch(buildUrl('/chat/messages'), {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                Authorization: `Token ${token}`,
-              },
-              body: JSON.stringify({
-                content,
-                is_anonymous: anonCheckboxEl.checked,
-              }),
-            })
-            if (!response.ok) {
-              const payload = await response.json().catch(() => ({}))
-              const detail = payload?.detail || '메시지를 전송하지 못했습니다.'
-              throw new Error(detail)
-            }
+          const payload = {
+            action: 'send_message',
+            content,
+            is_anonymous: anonCheckboxEl.checked,
+          }
+          if (sendRealtimeAction(payload)) {
             textareaEl.value = ''
-            sendBtnEl.disabled = true
-            await loadChatMessages({ silent: true })
+            updateSendAvailability()
+          }
+        }
+
+        const refreshHistory = () => {
+          setChatError('')
+          if (!sendRealtimeAction({ action: 'fetch_history' })) {
+            setStatusText('실시간 연결을 다시 시도합니다...')
+          }
+        }
+
+        const prepareRealtime = async () => {
+          if (!token || !currentUser) {
+            setRealtimeState('idle', '로그인 후 실시간 채팅을 이용해 주세요.')
+            return
+          }
+          try {
+            currentRoom = await ensurePublicRoom()
+            resetMessages()
+            syncFormState()
+            connectSocket()
           } catch (error) {
-            handleFetchError(formErrorEl, error.message || '메시지를 전송하지 못했습니다.', error)
-          } finally {
-            sendBtnEl.disabled = !textareaEl.value.trim()
+            console.error(error)
+            currentRoom = null
+            setChatError(error.message || '채팅방 정보를 준비하지 못했습니다.')
+            disconnectSocket(true)
           }
         }
 
         const init = async () => {
+          resetMessages()
           readToken()
+          setRealtimeState('idle')
           await fetchProfile()
-          await loadChatMessages()
-          startPolling()
+          if (token && currentUser) {
+            await prepareRealtime()
+          } else {
+            setRealtimeState('idle', '로그인 후 실시간 채팅을 이용해 주세요.')
+          }
         }
 
-        textareaEl.addEventListener('input', () => {
-          sendBtnEl.disabled = !currentUser || !textareaEl.value.trim()
-        })
+        textareaEl.addEventListener('input', updateSendAvailability)
         chatFormEl.addEventListener('submit', submitChat)
-        refreshBtn.addEventListener('click', () => loadChatMessages({ silent: false }))
+        refreshBtn.addEventListener('click', refreshHistory)
 
-        window.addEventListener('storage', (event) => {
-          if (event.key === TOKEN_STORAGE_KEY) {
-            readToken()
-            fetchProfile()
+        window.addEventListener('storage', async (event) => {
+          if (event.key !== TOKEN_STORAGE_KEY) return
+          const previous = token
+          readToken()
+          if (!token) {
+            currentUser = null
+            currentRoom = null
+            disconnectSocket(true)
+            resetMessages()
+            syncFormState()
+            setRealtimeState('idle', '로그인 후 실시간 채팅을 이용해 주세요.')
+            return
+          }
+          if (token !== previous) {
+            await fetchProfile()
+            await prepareRealtime()
           }
         })
 
