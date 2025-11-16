@@ -1,0 +1,1832 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>디버깅 연습 문제</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        padding: 1.5rem;
+        background: #10141a;
+        color: #f2f2f2;
+      }
+
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        background: #1c2430;
+        border-radius: 1rem;
+        padding: 2rem;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      }
+
+      h1 {
+        margin-top: 0;
+        font-size: 1.8rem;
+      }
+
+      .question-meta {
+        font-size: 0.9rem;
+        color: #9fb9d0;
+        margin-bottom: 0.6rem;
+      }
+
+      .question-title {
+        font-size: 1.2rem;
+        margin-bottom: 0.4rem;
+      }
+
+      .question-text {
+        line-height: 1.6;
+        margin-bottom: 1rem;
+      }
+
+      pre {
+        background: #0e1117;
+        padding: 1rem;
+        overflow-x: auto;
+        border-radius: 0.5rem;
+        border: 1px solid #1f2933;
+      }
+
+      code {
+        font-size: 0.9rem;
+        font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      }
+
+      fieldset {
+        border: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      label {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.7rem 0.9rem;
+        margin-bottom: 0.4rem;
+        border-radius: 0.45rem;
+        border: 1px solid #22303c;
+        cursor: pointer;
+        transition: border 0.2s, background 0.2s;
+      }
+
+      label:hover {
+        border-color: #4fb0ff;
+        background: rgba(79, 176, 255, 0.08);
+      }
+
+      input[type="radio"] {
+        transform: translateY(0.2rem);
+      }
+
+      .actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+      }
+
+      button {
+        flex: 1;
+        padding: 0.8rem 1.2rem;
+        border-radius: 0.5rem;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        background: #4fb0ff;
+        color: #05111c;
+        font-weight: 600;
+        transition: background 0.2s, opacity 0.2s;
+      }
+
+      button[disabled] {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      button.secondary {
+        background: #293745;
+        color: #eef6ff;
+      }
+
+      .feedback {
+        margin-top: 1rem;
+        font-size: 1rem;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid transparent;
+      }
+
+      .feedback.correct {
+        border-color: #3dd598;
+        background: rgba(61, 213, 152, 0.1);
+      }
+
+      .feedback.incorrect {
+        border-color: #ff6b6b;
+        background: rgba(255, 107, 107, 0.1);
+      }
+
+      .explanation {
+        margin-top: 0.5rem;
+        padding: 1rem;
+        background: #111821;
+        border-radius: 0.5rem;
+        border: 1px solid #1e2a38;
+      }
+
+      .scoreboard {
+        margin-top: 1.5rem;
+        font-size: 0.95rem;
+        color: #9fb9d0;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+
+      .completion {
+        text-align: center;
+        margin-top: 2rem;
+      }
+
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>디버깅 모의고사 (난이도: 보통)</h1>
+      <p class="question-meta">
+        Django 기반 db_ws_6_x 프로젝트에서 실제로 자주 만나는 실수를 토대로 만든
+        시나리오입니다. 로그를 읽고 원인/해결책을 정확히 짚어 보세요.
+      </p>
+
+      <section id="quiz-section">
+        <p class="question-meta" id="question-progress"></p>
+        <h2 class="question-title" id="question-title"></h2>
+        <p class="question-text" id="question-text"></p>
+        <pre class="hidden" id="code-wrapper"><code id="question-code"></code></pre>
+
+        <form id="options-form">
+          <fieldset id="options-fieldset"></fieldset>
+        </form>
+
+        <div class="actions">
+          <button id="check-answer" disabled>정답 확인</button>
+          <button id="next-question" class="secondary" disabled>다음 문제</button>
+        </div>
+
+        <div id="feedback" class="feedback hidden" aria-live="polite"></div>
+        <div id="explanation" class="explanation hidden"></div>
+        <div class="scoreboard">
+          <span id="score-label">정답 수: 0</span>
+          <span id="status-label">현재 문제: 1</span>
+        </div>
+      </section>
+
+      <section id="completion" class="completion hidden" aria-live="polite">
+        <h2>수고하셨습니다! 🎯</h2>
+        <p id="final-score"></p>
+        <button id="retry">다시 풀기</button>
+      </section>
+    </main>
+
+    <script>
+      function shuffle(array) {
+        const copy = array.slice();
+        for (let i = copy.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [copy[i], copy[j]] = [copy[j], copy[i]];
+        }
+        return copy;
+      }
+
+      const quizPool = [
+        {
+          title: "문제 1. 루트 URL이 곧장 404",
+          prompt:
+            "db_ws_6_1의 프로젝트 루트를 127.0.0.1:8000/으로 열면 'Using the URLconf defined in novel_hub.urls, Django tried these URL patterns...' 라는 404 설명만 뜹니다. admin은 잘 열립니다. 아래 URLConf에서 빠진 핵심은 무엇인가요?",
+          file: "db_ws_6_1/novel_hub/urls.py",
+          code: `from django.contrib import admin
+from django.urls import path
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+]`,
+          options: [
+            {
+              id: "a",
+              text: "ALLOWED_HOSTS가 비어 있어 루트 도메인을 거부한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "루트 경로를 libraries 앱의 index 뷰에 연결하는 path/include가 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "INSTALLED_APPS에 'libraries'가 빠져 있어서다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "ROOT_URLCONF 설정이 novel_hub.urls가 아니라서다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "URLConf가 admin 외에 아무 패턴도 등록하지 않아 '/' 요청이 매칭되지 않습니다. `path('', views.index, name='index')` 또는 `include('libraries.urls')` 를 추가해 루트로 들어온 요청을 앱 뷰로 연결해야 합니다.",
+        },
+        {
+          title: "문제 2. libraries.index를 찾을 수 없음",
+          prompt:
+            "루트 URL에 libraries.views.index를 연결했더니 `AttributeError: module 'libraries.views' has no attribute 'index'` 로 바로 죽습니다. 아래 뷰 파일에서 원인을 찾을 수 있습니다. 무엇이 문제인가요?",
+          file: "db_ws_6_1/libraries/views.py",
+          code: `from django.shortcuts import render
+
+# Create your views here.`,
+          options: [
+            {
+              id: "a",
+              text: "index 함수는 있지만 export되지 않는다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "views.py에 index 등 뷰 함수가 전혀 작성돼 있지 않다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "render를 import하면 안 된다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "urls.py에서 as_view()를 써야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "libraries/views.py는 스텁만 있고 뷰 함수가 없습니다. URLConf가 `views.index` 를 참조하는 순간 AttributeError가 발생하므로 index 함수를 먼저 작성해야 합니다.",
+        },
+        {
+          title: "문제 3. 로그인 뷰 ImportError",
+          prompt:
+            "db_ws_6_1에 `/accounts/login/` 경로를 만들었더니 `module 'accounts.views' has no attribute 'login'` 에러가 발생합니다. 뷰 파일은 아래처럼 비어 있습니다. 왜일까요?",
+          file: "db_ws_6_1/accounts/views.py",
+          code: `from django.shortcuts import render
+
+# Create your views here.`,
+          options: [
+            {
+              id: "a",
+              text: "login 함수명을 as_view()로 바꿔야 한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "accounts/views.py에 login, signup 등의 함수가 정의되어 있지 않다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "render를 import하면 AttributeError가 난다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "urls.py에서 include가 아니라 path를 써야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "accounts/views.py 자체가 비어 있으니 URLConf가 `views.login` 을 참조하는 순간 AttributeError가 납니다. 최소한 login 함수를 구현해야 경로를 연결할 수 있습니다.",
+        },
+        {
+          title: "문제 4. TemplateDoesNotExist가 계속 남",
+          prompt:
+            "db_ws_6_1에서 `return render(request, 'libraries/index.html')` 을 작성했는데 TemplateDoesNotExist 에러가 계속 발생합니다. 아래 settings의 TEMPLATES 설정을 보면 이유가 보입니다. 무엇이 문제인가요?",
+          file: "db_ws_6_1/novel_hub/settings.py:TEMPLATES",
+          code: `TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]`,
+          options: [
+            {
+              id: "a",
+              text: "APP_DIRS가 True라서 templates 폴더를 보지 않는다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "DIRS가 빈 리스트라 프로젝트 templates 폴더를 탐색하지 않는다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "context_processors에 debug가 없다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "TEMPLATES가 딕셔너리여야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "DIRS에 `BASE_DIR / 'templates'` 가 빠져 있어 프로젝트 루트 templates 폴더를 찾지 못합니다. 앱에도 templates 디렉토리가 없으니 render가 TemplateDoesNotExist를 던집니다.",
+        },
+        {
+          title: "문제 5. Book 제목 길이 제한이 적용되지 않음",
+          prompt:
+            "제목을 100자로 제한했다고 생각했는데 admin에서도 길이 제한이 전혀 걸리지 않습니다. Book 모델은 아래와 같습니다. 이유는 무엇인가요?",
+          file: "db_ws_6_1/libraries/models.py:Book",
+          code: `class Book(models.Model):
+    author = models.ForeignKey(Author, on_delete=models.CASCADE, related_name="books")
+    title = models.TextField(max_length=100)
+    description = models.TextField()
+    genre = models.TextField()`,
+          options: [
+            {
+              id: "a",
+              text: "TextField는 max_length를 무시하므로 CharField를 써야 한다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "related_name='books' 때문에 validator가 사라진다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "genre도 TextField라 title 제한을 덮어쓴다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "AUTH_USER_MODEL을 설정하지 않아서다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "TextField에 max_length를 적어도 DB 차원에서 제한되거나 기본 폼에서 검사되지 않습니다. 제목처럼 짧은 문자열은 CharField로 선언하거나 별도의 validator를 추가해야 합니다.",
+        },
+        {
+          title: "문제 6. 로그인 후 이전 페이지로 돌아가지 않음",
+          prompt:
+            "db_ws_6_2에서 `/secret/` 같은 login_required 페이지로 보내졌다가 로그인하면 항상 메인(index)으로만 이동합니다. 로그인 뷰는 아래와 같습니다. 왜 next 파라미터가 무시될까요?",
+          file: "db_ws_6_2/accounts/views.py:login",
+          code: `def login(request):
+    if request.method == "POST":
+        form = AuthenticationForm(request, request.POST)
+        if form.is_valid():
+            auth_login(request, form.get_user())
+            return redirect("libraries:index")
+    else:
+        form = AuthenticationForm()
+    return render(request, "accounts/login.html", {"form": form})`,
+          options: [
+            {
+              id: "a",
+              text: "AuthenticationForm은 next 파라미터를 지원하지 않는다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "성공 후 항상 redirect(\"libraries:index\")를 호출해 next 값을 읽지 않는다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "login_required 데코레이터가 settings.LOGIN_URL을 모른다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "form.is_valid() 전에 redirect를 해야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "성공 시 next 파라미터를 확인하지 않고 무조건 index로 이동하도록 하드코딩되어 있습니다. `redirect(request.GET.get('next') or 'libraries:index')` 처럼 next 값을 반영해야 합니다.",
+        },
+        {
+          title: "문제 7. 로그인 상태에서 회원가입이 열려 있음",
+          prompt:
+            "이미 로그인한 사용자가 `/accounts/signup/` 에 들어가면 새 계정을 만들고 그 계정으로 덮어써 버립니다. signup 뷰는 아래와 같습니다. 어떤 검사가 빠졌나요?",
+          file: "db_ws_6_2/accounts/views.py:signup",
+          code: `def signup(request):
+    if request.method == "POST":
+        form = CustomUserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            auth_login(request, user)
+            return redirect("libraries:index")
+    else:
+        form = CustomUserCreationForm()
+    return render(request, "accounts/signup.html", {"form": form})`,
+          options: [
+            {
+              id: "a",
+              text: "로그인 여부를 확인해 이미 인증된 사용자를 리다이렉트하지 않는다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "CustomUserCreationForm이 AbstractUser를 상속하지 않는다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "auth_login 호출이 없다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "signup 템플릿에 csrf 토큰이 없다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "signup 뷰에 `if request.user.is_authenticated: return redirect(...)` 가 없어 이미 로그인한 사용자도 회원가입을 시도할 수 있습니다. 인증된 사용자는 접근을 막아야 합니다.",
+        },
+        {
+          title: "문제 8. GET 요청만으로 회원탈퇴가 되어버림",
+          prompt:
+            "보안 점검에서 회원탈퇴가 GET 링크만 눌러도 수행된다고 경고합니다. base 템플릿은 아래와 같습니다. 왜 문제가 될까요?",
+          file: "db_ws_6_2/templates/base.html",
+          code: `{% if user.is_authenticated %}
+<p>반갑습니다, {{ user.username }}님!</p>
+<button><a href="{% url 'accounts:logout' %}">Logout</a></button>
+<button><a href="{% url 'accounts:delete' %}">회원탈퇴</a></button>
+{% endif %}`,
+          options: [
+            {
+              id: "a",
+              text: "button 태그 안에 a 태그를 넣으면 form이 전송된다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "탈퇴 링크를 단순 a 태그로 만들어 GET 요청만으로 상태 변경을 일으킨다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "accounts:delete URL이 정의되어 있지 않다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "csrf_token이 input hidden으로 들어가야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "탈퇴 링크가 `<a href>` 로 만들어져 있어 단순 GET 요청으로도 delete 뷰가 호출됩니다. 메서드 검증과 POST 폼 없이 계정이 삭제되므로 require_POST/CSRF 보호를 적용해야 합니다.",
+        },
+        {
+          title: "문제 9. 다른 사이트에서 강제로 로그아웃됨",
+          prompt:
+            "외부 사이트에 `<img src=\"/accounts/logout/\">` 만 심어도 사용자가 강제로 로그아웃됩니다. logout 뷰는 아래와 같습니다. 근본 원인은 무엇인가요?",
+          file: "db_ws_6_2/accounts/views.py:logout",
+          code: `def logout(request):
+    auth_logout(request)
+    return redirect("libraries:index")`,
+          options: [
+            {
+              id: "a",
+              text: "auth_logout이 GET 요청을 처리하지 못한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "HTTP 메서드를 제한하지 않아 GET 요청만으로도 로그아웃된다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect가 존재하지 않는다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "urls.py에 csrf_exempt가 선언돼 있다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "logout 뷰가 GET 요청도 허용하므로 외부 사이트에서 이미지를 통해 호출해도 세션이 종료됩니다. POST 전용으로 만들고 CSRF 검증을 거쳐야 합니다.",
+        },
+        {
+          title: "문제 10. {% url 'accounts:profile' %} 이 동작하지 않음",
+          prompt:
+            "다른 프로젝트에서 쓰던 템플릿을 붙였더니 `{% url 'accounts:profile' user.username %}` 부분에서 NoReverseMatch가 납니다. 아래 URLConf를 보면 이유가 무엇인가요?",
+          file: "db_ws_6_2/accounts/urls.py",
+          code: `app_name = "accounts"
+
+urlpatterns = [
+    path("login/", views.login, name="login"),
+    path("logout/", views.logout, name="logout"),
+    path("signup/", views.signup, name="signup"),
+    path("delete/", views.delete, name="delete"),
+]`,
+          options: [
+            {
+              id: "a",
+              text: "profile URL의 이름이 다른데 템플릿에서 잘못 썼다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "accounts 앱에 profile 경로가 전혀 정의돼 있지 않다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "include 시 namespace를 지정하지 않았다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "username 대신 pk를 넘겨야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "URLConf에 login/logout/signup/delete 네 가지만 있고 profile 이름의 패턴이 없습니다. 템플릿에서 profile 링크를 사용하려면 해당 경로를 추가해야 합니다.",
+        },
+        {
+          title: "문제 11. 비로그인 사용자가 작가 생성 시 500",
+          prompt:
+            "db_ws_6_3에서 비로그인 상태로 `/libraries/create_author/` 에 POST하면 NOT NULL 제약 위반으로 500이 납니다. 아래 뷰에서 빠진 것은 무엇인가요?",
+          file: "db_ws_6_3/libraries/views.py:create_author",
+          code: `def create_author(request):
+    if request.method == "POST":
+        form = AuthorForm(request.POST)
+        if form.is_valid():
+            author = form.save(commit=False)
+            author.user = request.user
+            author.save()
+            return redirect("accounts:profile", author.user.username)
+    else:
+        form = AuthorForm()
+    context = {"form": form}
+    return render(request, "libraries/create_author.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "AuthorForm에 user 필드가 있어야 한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "로그인하지 않은 AnonymousUser를 FK에 넣으려 하기 때문이다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "commit=False를 쓰면 저장이 되지 않는다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "redirect 이름이 잘못됐다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "뷰에 인증 검사가 없어 AnonymousUser가 들어오고, 그 상태로 author.user를 채우려다 NOT NULL 제약이 깨집니다. login_required를 적용해야 합니다.",
+        },
+        {
+          title: "문제 12. 아무나 책을 생성할 수 있음",
+          prompt:
+            "db_ws_6_3에서는 `/libraries/books/create/` 에 로그인 여부와 무관하게 접근해 책을 만들 수 있고 다른 사람 작가도 선택됩니다. 아래 뷰에서 근본적인 문제는 무엇인가요?",
+          file: "db_ws_6_3/libraries/views.py:books_create",
+          code: `def books_create(request):
+    if request.method == "POST":
+        form = BookForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect("libraries:books")
+    else:
+        form = BookForm()
+    context = {"form": form}
+    return render(request, "libraries/books_create.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "BookForm이 ModelForm이 아니다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "로그인 제한과 사용자별 author 필터링이 전혀 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect를 쓰면 안 된다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "csrf_token을 숨김 필드로 넣지 않았다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "books_create에는 login_required도 없고 BookForm도 다른 사용자 작가를 걸러 주지 않습니다. 누구나 접근해 임의의 author로 책을 만들 수 있으므로 인증 및 필터링 로직이 필요합니다.",
+        },
+        {
+          title: "문제 13. BookForm이 다른 사람 작가까지 노출",
+          prompt:
+            "db_ws_6_3에서 '내가 만든 작가만 선택 가능'해야 하는데 BookForm은 모든 Author를 드롭다운에 보여 줍니다. 이유가 무엇인가요?",
+          file: "db_ws_6_3/libraries/forms.py",
+          code: `class BookForm(forms.ModelForm):
+
+    class Meta:
+        model = Book
+        fields = "__all__"`,
+          options: [
+            {
+              id: "a",
+              text: "fields='__all__' 로 author 필드를 제한 없이 노출했다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "ModelForm을 상속하지 않았다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "Meta.model이 Author여야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "fields가 튜플이어야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "BookForm은 author 필드를 포함한 모든 필드를 그대로 노출합니다. queryset을 사용자 기준으로 제한하는 로직이 없으니 다른 사람 Author도 그대로 선택됩니다.",
+        },
+        {
+          title: "문제 14. author_subscribed URL을 못 찾음",
+          prompt:
+            "db_ws_6_3의 author_books.html 템플릿은 `{% url 'libraries:author_subscribed' author.pk %}` 를 사용하는데 NoReverseMatch가 납니다. 아래 URLConf를 보면 원인은 무엇인가요?",
+          file: "db_ws_6_3/libraries/urls.py",
+          code: `app_name = "libraries"
+
+urlpatterns = [
+    path("create_author/", views.create_author, name="create_author"),
+    path("books/", views.books, name="books"),
+    path("books/create/", views.books_create, name="books_create"),
+]`,
+          options: [
+            {
+              id: "a",
+              text: "author_books 뷰 이름이 잘못됐다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "author_subscribed 패턴이 URLConf에 정의돼 있지 않다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "path 대신 re_path를 써야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "템플릿에서 kwargs를 넘겨야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "URLConf에 author_subscribed 이름의 path가 없으니 템플릿에서 역참조할 수 없습니다. 해당 URL을 추가해야 합니다.",
+        },
+        {
+          title: "문제 15. /accounts/delete/ 에 익명 접근 시 서버 에러",
+          prompt:
+            "로그아웃 상태에서 `/accounts/delete/` 로 들어가면 `AttributeError: 'AnonymousUser' object has no attribute 'delete'` 가 납니다. 아래 뷰에서 빠진 것은 무엇인가요?",
+          file: "db_ws_6_3/accounts/views.py:delete",
+          code: `def delete(request):
+    auth_logout(request)
+    request.user.delete()
+    return redirect("accounts:login")`,
+          options: [
+            {
+              id: "a",
+              text: "auth_logout이 request.user를 None으로 만든다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "login_required가 없어 AnonymousUser.delete() 를 호출하게 된다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect가 index여야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "User 모델이 AbstractBaseUser가 아니다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "delete 뷰에 login_required가 없어 익명 사용자도 접근합니다. AnonymousUser에는 delete가 없으므로 AttributeError가 발생합니다.",
+        },
+        {
+          title: "문제 16. 존재하지 않는 프로필 주소 접속 시 500",
+          prompt:
+            "`/accounts/profile/not-exist/` 로 접근하면 404 대신 DoesNotExist 예외가 납니다. profile 뷰는 아래와 같습니다. 어떤 처리가 빠졌나요?",
+          file: "db_ws_6_3/accounts/views.py:profile",
+          code: `def profile(request, username):
+    User = get_user_model()
+    person = User.objects.get(username=username)
+    context = {
+        "person": person,
+    }
+    return render(request, "accounts/profile.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "get_user_model을 쓰면 안 된다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "없는 username을 404로 바꿀 예외 처리가 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "context에 person 대신 user를 넣어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "render 대신 redirect를 써야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "User.objects.get는 결과가 없으면 DoesNotExist를 던지므로 500이 됩니다. get_object_or_404 등을 사용해야 합니다.",
+        },
+        {
+          title: "문제 17. 구독 버튼을 누르면 AnonymousUser.pk 에러",
+          prompt:
+            "db_ws_6_4에서 로그인 없이 `/libraries/author_subscribed/<pk>/` 를 호출하면 `'AnonymousUser' object has no attribute 'pk'` 예외가 납니다. 해당 뷰는 아래와 같습니다. 왜일까요?",
+          file: "db_ws_6_4/libraries/views.py:author_subscribed",
+          code: `def author_subscribed(request, author_pk):
+    author = Author.objects.get(pk=author_pk)
+    if author.subscribed_users.filter(pk=request.user.pk).exists():
+        author.subscribed_users.remove(request.user)
+    else:
+        author.subscribed_users.add(request.user)
+    return redirect("libraries:author_books", author.pk)`,
+          options: [
+            {
+              id: "a",
+              text: "Author.objects.get이 항상 None을 돌려준다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "로그인 검사가 없어 AnonymousUser.pk 접근 시 AttributeError가 난다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect가 잘못됐다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "ManyToManyField가 symmetrical=True여야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "author_subscribed에 login_required가 없어 request.user가 AnonymousUser일 수 있습니다. AnonymousUser에는 pk 속성이 없으니 AttributeError가 납니다.",
+        },
+        {
+          title: "문제 18. 구독 토글이 GET 요청으로도 동작",
+          prompt:
+            "REST 점검에서 `/libraries/author_subscribed/<pk>/` 를 GET으로 호출해도 구독 상태가 바뀐다고 합니다. 같은 뷰에서 어떤 제약이 빠졌나요?",
+          file: "db_ws_6_4/libraries/views.py:author_subscribed",
+          code: `def author_subscribed(request, author_pk):
+    author = Author.objects.get(pk=author_pk)
+    if author.subscribed_users.filter(pk=request.user.pk).exists():
+        author.subscribed_users.remove(request.user)
+    else:
+        author.subscribed_users.add(request.user)
+    return redirect("libraries:author_books", author.pk)`,
+          options: [
+            {
+              id: "a",
+              text: "redirect가 POST만 허용한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "HTTP 메서드를 검사하거나 require_POST로 감싸지 않아 GET도 상태를 바꾼다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "Author.objects.get이 항상 같은 객체를 반환한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "subscribed_users가 symmetrical=True라서다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "메서드 제한이 없어 GET 요청도 그대로 처리합니다. require_POST를 붙이거나 request.method 검사로 POST만 허용해야 합니다.",
+        },
+        {
+          title: "문제 19. 작가 생성도 로그인 없이 가능",
+          prompt:
+            "db_ws_6_4의 `/libraries/create_author/` 는 여전히 로그인 없이 접근할 수 있어 AnonymousUser 저장 시 IntegrityError가 납니다. 무엇이 빠졌나요?",
+          file: "db_ws_6_4/libraries/views.py:create_author",
+          code: `def create_author(request):
+    if request.method == "POST":
+        form = AuthorForm(request.POST)
+        if form.is_valid():
+            author = form.save(commit=False)
+            author.user = request.user
+            author.save()
+            return redirect("accounts:profile", author.user.username)
+    else:
+        form = AuthorForm()
+    context = {"form": form}
+    return render(request, "libraries/create_author.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "commit=False를 쓰면 저장이 안 된다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "로그인 검사가 없어 AnonymousUser를 FK에 넣으려 한다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "context에 form이 없다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "redirect가 잘못됐다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "create_author에도 login_required가 없어 익명 사용자도 접근해 user FK를 채우지 못합니다.",
+        },
+        {
+          title: "문제 20. 존재하지 않는 작가 페이지 500",
+          prompt:
+            "잘못된 author_pk로 `/libraries/author_books/999/` 를 호출하면 DoesNotExist 예외로 500이 납니다. 아래 뷰에서 어떤 방어 로직이 빠졌나요?",
+          file: "db_ws_6_4/libraries/views.py:author_books",
+          code: `def author_books(request, author_pk):
+    author = Author.objects.get(pk=author_pk)
+    books = author.book_set.all()
+    context = {"author": author, "books": books}
+    return render(request, "libraries/author_books.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "book_set 대신 related_name을 사용해야 한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "Author.objects.get 실패 시 404로 바꾸는 처리가 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "context를 넘기지 않았다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "render가 아니라 redirect를 써야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "Author.objects.get는 결과가 없으면 DoesNotExist를 던집니다. get_object_or_404로 감싸야 잘못된 pk에 대해 404를 반환할 수 있습니다.",
+        },
+        {
+          title: "문제 21. 책 작성 폼이 공개되어 있음",
+          prompt:
+            "db_ws_6_4의 `/libraries/books/create/` 는 누구나 접근해 책을 등록할 수 있습니다. 아래 뷰에서 누락된 부분은 무엇인가요?",
+          file: "db_ws_6_4/libraries/views.py:books_create",
+          code: `def books_create(request):
+    if request.method == "POST":
+        form = BookForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect("libraries:books")
+    else:
+        form = BookForm()
+    context = {"form": form}
+    return render(request, "libraries/books_create.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "BookForm을 CBV로 바꿔야 한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "login_required와 사용자별 author 제한이 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect가 detail이어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "템플릿 경로가 틀렸다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "books_create에도 인증 및 owner 검증이 없어 누구나 책을 추가할 수 있습니다. 로그인으로 보호하고 author 필드를 필터링해야 합니다.",
+        },
+        {
+          title: "문제 22. 여전히 다른 사람의 작가를 선택할 수 있음",
+          prompt:
+            "db_ws_6_4의 BookForm은 아래와 같습니다. 여전히 다른 사람 Author가 목록에 뜨는 이유가 무엇인가요?",
+          file: "db_ws_6_4/libraries/forms.py",
+          code: `class BookForm(forms.ModelForm):
+
+    class Meta:
+        model = Book
+        fields = "__all__"`,
+          options: [
+            {
+              id: "a",
+              text: "Author 모델에 related_name이 없다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "BookForm이 사용자별 queryset 제한을 하지 않는다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "fields에 title, content만 넣어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "forms.ModelForm을 상속하지 않았다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "BookForm은 여전히 author 필드를 제한하지 않아 모든 Author를 노출합니다. user 기반 필터가 필요합니다.",
+        },
+        {
+          title: "문제 23. 구독 토글이 여전히 로그인 없이 호출됨",
+          prompt:
+            "db_ws_6_5에서도 `/libraries/author_subscribed/<pk>/` 는 login_required가 없어 `'AnonymousUser' object has no attribute 'pk'` 에러가 납니다. 왜일까요?",
+          file: "db_ws_6_5/libraries/views.py:author_subscribed",
+          code: `def author_subscribed(request, author_pk):
+    author = Author.objects.get(pk=author_pk)
+    if author.subscribed_users.filter(pk=request.user.pk).exists():
+        author.subscribed_users.remove(request.user)
+    else:
+        author.subscribed_users.add(request.user)
+    return redirect("libraries:author_books", author.pk)`,
+          options: [
+            {
+              id: "a",
+              text: "redirect 대상이 존재하지 않는다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "로그인 제한이 없어 AnonymousUser.pk 접근 시 AttributeError가 난다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "Author.objects.get이 항상 None을 돌려준다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "ManyToManyField가 symmetrical=True여야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "author_subscribed에 login_required가 없어 익명 사용자가 들어오면 pk 접근 시 오류가 납니다.",
+        },
+        {
+          title: "문제 24. 작가 생성 페이지도 보호되지 않음",
+          prompt:
+            "db_ws_6_5는 책 작성만 login_required가 붙었고 `/libraries/create_author/` 는 여전히 누구나 접근할 수 있습니다. 아래 뷰에서 무엇이 빠졌나요?",
+          file: "db_ws_6_5/libraries/views.py:create_author",
+          code: `def create_author(request):
+    if request.method == "POST":
+        form = AuthorForm(request.POST)
+        if form.is_valid():
+            author = form.save(commit=False)
+            author.user = request.user
+            author.save()
+            return redirect("accounts:profile", author.user.username)
+    else:
+        form = AuthorForm()
+    context = {"form": form}
+    return render(request, "libraries/create_author.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "AuthorForm이 ModelForm이 아니다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "login_required가 없어 AnonymousUser를 저장하려 한다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "author.user에 request.user를 대입하면 안 된다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "redirect가 잘못됐다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "create_author 역시 인증되지 않은 사용자가 접근하면 AnonymousUser FK를 저장하려다 오류가 납니다. login_required가 필요합니다.",
+        },
+        {
+          title: "문제 25. 내 작가가 없으면 드롭다운이 비어 있음",
+          prompt:
+            "db_ws_6_5에서 로그인한 계정이 Author를 아직 만들지 않았다면 책 작성 폼의 author 드롭다운이 비어 있고 'Select a valid choice...' 오류가 납니다. BookForm은 아래와 같습니다. 이유가 무엇인가요?",
+          file: "db_ws_6_5/libraries/forms.py:BookForm.__init__",
+          code: `def __init__(self, *args, user=None, **kwargs):
+    super().__init__(*args, **kwargs)
+    if "author" in self.fields:
+        if user is not None and getattr(user, "is_authenticated", False):
+            self.fields["author"].queryset = Author.objects.filter(
+                user=user
+            ).order_by("id")
+        else:
+            self.fields["author"].queryset = Author.objects.none()`,
+          options: [
+            {
+              id: "a",
+              text: "로그인한 사용자가 만든 Author가 없으면 queryset이 none()이라 비어 있다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "order_by('id') 때문에 빈 쿼리셋이 된다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "user 매개변수가 위치 인자여야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "fields에서 author를 제외해야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "BookForm은 로그인한 사용자가 만든 Author만 보여 주도록 설계되어 있습니다. 아직 Author를 만들지 않았다면 queryset이 비어 있고 제출 시 유효하지 않은 선택 에러가 납니다.",
+        },
+        {
+          title: "문제 26. BookForm(request.user, request.POST) 호출 시 User object 오류",
+          prompt:
+            "skeleton.py의 예제를 따라 `BookForm(request.user, request.POST)` 로 폼을 만들었더니 `'User' object has no attribute 'get'` 오류가 납니다. skeleton과 실제 BookForm의 차이는 무엇인가요?",
+          file: "db_ws_6_5/skeleton.py",
+          code: `class SomeModelForm(forms.ModelForm):
+    def __init__(self, user, *args, **kwargs):
+        super(SomeModelForm, self).__init__(*args, **kwargs)
+        self.fields['RelationModelFieldname'].queryset = RelationModel.objects.filter(user=user)`,
+          options: [
+            {
+              id: "a",
+              text: "실제 BookForm은 user를 키워드 인자로 받는데 위치 인자로 넘겨 data 인자가 User가 되었다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "forms.ModelForm을 상속하지 않았다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "Author 모델이 AbstractUser를 상속하지 않는다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "skeleton.py가 프로젝트에 있으면 안 된다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "skeleton은 첫 번째 위치 인자로 user를 받지만 실제 BookForm은 `__init__(..., user=None, ...)` 으로 user를 키워드 인자로 받습니다. skeleton식으로 호출하면 User 객체가 data 인자로 취급돼 `'User' object has no attribute 'get'` 오류가 납니다.",
+        },
+        {
+          title: "문제 27. user 인자를 빼먹은 BookForm 사용",
+          prompt:
+            "다른 뷰에서 `form = BookForm(request.POST)` 만 호출했더니 author 필드가 비어 있고 'Select a valid choice' 오류가 발생합니다. BookForm 정의는 위와 같습니다. 어떤 인자를 반드시 넘겨야 할까요?",
+          file: "db_ws_6_5/libraries/forms.py:BookForm.__init__",
+          code: `def __init__(self, *args, user=None, **kwargs):
+    super().__init__(*args, **kwargs)
+    if "author" in self.fields:
+        if user is not None and getattr(user, "is_authenticated", False):
+            self.fields["author"].queryset = Author.objects.filter(user=user).order_by("id")
+        else:
+            self.fields["author"].queryset = Author.objects.none()`,
+          options: [
+            {
+              id: "a",
+              text: "user 키워드를 전달하지 않으면 queryset이 Author.objects.none()으로 비워진다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "첫 번째 위치 인자로 user 를 넘겨야 한다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "kwargs 대신 positional 인자를 써야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "Author.objects.filter 대신 all()을 써야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "BookForm은 user 키워드를 받아 author queryset을 사용자 소유로 제한합니다. user를 넘기지 않으면 else 블록에서 queryset을 none()으로 만들어 어떤 값도 통과하지 못합니다.",
+        },
+        {
+          title: "문제 28. 잘못된 author_pk로 접근 시 500",
+          prompt:
+            "db_ws_6_5에서 `/libraries/author_books/0/` 으로 접근하면 DoesNotExist 예외로 500이 납니다. 아래 뷰에서 어떤 처리가 누락됐나요?",
+          file: "db_ws_6_5/libraries/views.py:author_books",
+          code: `def author_books(request, author_pk):
+    author = Author.objects.get(pk=author_pk)
+    books = author.book_set.all()
+    context = {"author": author, "books": books}
+    return render(request, "libraries/author_books.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "book_set을 쓰면 안 된다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "없는 pk일 때 404를 반환할 예외 처리가 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "context를 넘기지 않았다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "render 대신 redirect를 써야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "Author.objects.get는 실패 시 바로 DoesNotExist를 던집니다. get_object_or_404로 감싸야 합니다.",
+        },
+        {
+          title: "문제 29. 댓글 작성 실패 시 comments 변수가 없음",
+          prompt:
+            "db_hw_6_2에서 댓글을 비워 둔 채 제출하면 detail.html을 렌더링하면서 `VariableDoesNotExist: comments` 오류가 납니다. 아래 뷰에서 어떤 값을 빼먹었나요?",
+          file: "db_hw_6_2/articles/views.py:comments_create",
+          code: `@login_required
+def comments_create(request, pk):
+    article = Article.objects.get(pk=pk)
+    comment_form = CommentForm(request.POST)
+    if comment_form.is_valid():
+        comment = comment_form.save(commit=False)
+        comment.article = article
+        comment.user = request.user
+        comment.save()
+        return redirect('articles:detail', article.pk)
+    context = {
+        'article': article,
+        'comment_form': comment_form,
+    }
+    return render(request, 'articles/detail.html', context)`,
+          options: [
+            {
+              id: "a",
+              text: "redirect가 detail이 아니라 index여야 한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "유효하지 않을 때 comments 목록을 context에 넣지 않았다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "comment_form.is_valid()를 호출하면 form.errors가 사라진다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "CommentForm이 ModelForm이 아니다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "detail.html은 `{% for comment in comments %}` 를 사용하지만 context에 comments를 넣지 않아 템플릿이 깨집니다. `article.comment_set.all()` 을 다시 넣어야 합니다.",
+        },
+        {
+          title: "문제 30. 다른 글의 댓글도 삭제 가능",
+          prompt:
+            "db_hw_6_2에서 `/articles/<article_pk>/comments/<comment_pk>/delete/` 호출 시 article_pk와 무관한 comment_pk를 넘겨도 댓글이 삭제됩니다. 뷰는 아래와 같습니다. 왜일까요?",
+          file: "db_hw_6_2/articles/views.py:comments_delete",
+          code: `@login_required
+def comments_delete(request, article_pk, comment_pk):
+    comment = Comment.objects.get(pk=comment_pk)
+    if request.user == comment.user:
+        comment.delete()
+    return redirect('articles:detail', article_pk)`,
+          options: [
+            {
+              id: "a",
+              text: "comment 객체를 article_pk로 필터링하지 않았다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "redirect가 잘못됐다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "login_required가 없다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "Comment 모델이 Article을 참조하지 않는다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "comment_pk만으로 댓글을 찾고 article_pk와의 일치 여부를 확인하지 않아 다른 게시글의 댓글도 삭제할 수 있습니다.",
+        },
+        {
+          title: "문제 31. GET 요청으로도 게시글이 삭제됨",
+          prompt:
+            "db_hw_6_2에서 `/articles/5/delete/` 를 GET으로 호출해도 글이 삭제됩니다. 아래 delete 뷰에서 어떤 검증이 빠졌나요?",
+          file: "db_hw_6_2/articles/views.py:delete",
+          code: `@login_required
+def delete(request, pk):
+    article = Article.objects.get(pk=pk)
+    if request.user == article.user:
+        article.delete()
+    return redirect('articles:index')`,
+          options: [
+            {
+              id: "a",
+              text: "csrf_protect를 쓰지 않았다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "HTTP 메서드를 확인하지 않아 GET 요청도 삭제를 수행한다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect가 detail이어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "Article.objects.get을 쓰면 안 된다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "delete 뷰가 POST 전용이 아니어서 GET 요청만으로도 상태가 변경됩니다. method 검증이나 require_POST가 필요합니다.",
+        },
+        {
+          title: "문제 32. 좋아요 토글이 GET으로도 가능",
+          prompt:
+            "db_hw_6_2에서 `/articles/<pk>/likes/` 를 GET으로 호출해도 좋아요가 토글됩니다. 아래 뷰에서 근본 원인은 무엇인가요?",
+          file: "db_hw_6_2/articles/views.py:likes",
+          code: `@login_required
+def likes(request, article_pk):
+    article = Article.objects.get(pk=article_pk)
+    if request.user in article.like_users.all():
+        article.like_users.remove(request.user)
+    else:
+        article.like_users.add(request.user)
+    return redirect('articles:index')`,
+          options: [
+            {
+              id: "a",
+              text: "ManyToManyField가 symmetrical=True여야 한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "HTTP 메서드를 제한하지 않아 GET으로도 상태가 바뀐다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect가 detail이어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "article.like_users.all() 대신 exists()를 써야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "likes 뷰도 메서드 검증이 없어 GET 요청만으로 좋아요 상태를 바꿀 수 있습니다. require_POST를 붙여야 합니다.",
+        },
+        {
+          title: "문제 33. /accounts/delete/ 를 GET으로 호출해도 계정이 삭제됨",
+          prompt:
+            "db_hw_6_2에서 `/accounts/delete/` 를 주소창에 입력하기만 해도 계정이 삭제됩니다. delete 뷰는 아래와 같습니다. 무엇을 추가해야 할까요?",
+          file: "db_hw_6_2/accounts/views.py:delete",
+          code: `@login_required
+def delete(request):
+    request.user.delete()
+    return redirect("articles:index")`,
+          options: [
+            {
+              id: "a",
+              text: "auth_logout을 먼저 호출해야 한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "HTTP 메서드를 제한하지 않아 GET 요청도 삭제를 수행한다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect가 login이어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "login_required가 없다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "뷰가 POST 전용이 아니어서 GET만으로 계정을 삭제할 수 있습니다. method 검증과 CSRF 보호가 필요합니다.",
+        },
+        {
+          title: "문제 34. 존재하지 않는 프로필 주소에 접속하면 500",
+          prompt:
+            "`/accounts/profile/unknown/` 에 접근하면 404 대신 DoesNotExist가 납니다. profile 뷰는 아래와 같습니다. 무엇을 고쳐야 하나요?",
+          file: "db_hw_6_2/accounts/views.py:profile",
+          code: `def profile(request, username):
+    User = get_user_model()
+    person = User.objects.get(username=username)
+    context = {"person": person}
+    return render(request, "accounts/profile.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "get_user_model을 쓰면 안 된다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "없는 username에 대한 404 처리(get_object_or_404)가 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "context에 person 대신 user를 넣어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "템플릿 경로가 틀렸다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "User.objects.get는 실패 시 DoesNotExist를 던집니다. get_object_or_404나 try/except로 404를 반환해야 합니다.",
+        },
+        {
+          title: "문제 35. GET 요청만으로도 팔로우가 토글됨",
+          prompt:
+            "db_hw_6_4에서 `/accounts/3/follow/` 를 GET으로 호출해도 팔로우/언팔로우가 전환됩니다. 아래 follow 뷰에서 무엇이 빠졌나요?",
+          file: "db_hw_6_4/accounts/views.py:follow",
+          code: `@login_required
+def follow(request, user_pk):
+    User = get_user_model()
+    you = User.objects.get(pk=user_pk)
+    me = request.user
+
+    if you != me:
+        if me in you.followers.all():
+            you.followers.remove(me)
+        else:
+            you.followers.add(me)
+    return redirect("accounts:profile", you.username)`,
+          options: [
+            {
+              id: "a",
+              text: "login_required가 없다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "HTTP 메서드를 제한하지 않아 GET으로도 상태를 바꾼다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "you != me 비교가 잘못됐다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "redirect가 문자열이 아니라 함수여야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "follow 뷰도 require_POST 없이 작성되어 GET 요청만으로 follower 관계를 변경할 수 있습니다.",
+        },
+        {
+          title: "문제 36. 없는 사용자 pk로 follow 호출 시 500",
+          prompt:
+            "`/accounts/999/follow/` 로 접근하면 DoesNotExist 예외가 납니다. 같은 뷰에서 어떤 예외 처리가 필요할까요?",
+          file: "db_hw_6_4/accounts/views.py:follow",
+          code: `you = User.objects.get(pk=user_pk)`,
+          options: [
+            {
+              id: "a",
+              text: "User.objects.get이 None을 돌려준다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "존재하지 않는 pk를 404로 바꿀 get_object_or_404 처리가 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "pk 대신 username을 받아야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "followers related_name이 틀렸다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "User.objects.get는 실패 시 DoesNotExist를 던지므로 500이 됩니다. get_object_or_404 등으로 처리해야 합니다.",
+        },
+        {
+          title: "문제 37. 계정을 지운 뒤에도 세션이 남아 있음",
+          prompt:
+            "db_hw_6_4에서 `/accounts/delete/` 를 호출하면 사용자는 삭제되지만 다음 요청에서 `User matching query does not exist` 로그가 찍힙니다. delete 뷰는 아래와 같습니다. 무엇이 빠졌나요?",
+          file: "db_hw_6_4/accounts/views.py:delete",
+          code: `@login_required
+def delete(request):
+    request.user.delete()
+    return redirect("articles:index")`,
+          options: [
+            {
+              id: "a",
+              text: "auth_logout으로 세션을 정리하지 않았다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "login_required가 없다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "redirect가 login이어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "delete는 POST만 지원한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "사용자를 삭제한 뒤에도 세션에 기존 user_id가 남아 있어 다음 요청에서 AuthenticationMiddleware가 삭제된 사용자를 찾으려다 DoesNotExist를 기록합니다. `auth_logout(request)` 로 세션을 먼저 정리해야 합니다.",
+        },
+        {
+          title: "문제 38. 댓글 검증 실패 시 comments 컨텍스트 누락",
+          prompt:
+            "db_hw_6_4에서도 댓글 작성 실패 후 detail.html을 렌더링하면 comments 변수가 없어 오류가 납니다. 아래 context를 보면 무엇이 빠졌나요?",
+          file: "db_hw_6_4/articles/views.py:comments_create",
+          code: `context = {
+    'article': article,
+    'comment_form': comment_form,
+}
+return render(request, 'articles/detail.html', context)`,
+          options: [
+            {
+              id: "a",
+              text: "댓글 목록(comments)이 context에 없다.",
+              correct: true,
+            },
+            {
+              id: "b",
+              text: "comment_form을 deepcopy해야 한다.",
+              correct: false,
+            },
+            {
+              id: "c",
+              text: "redirect를 써야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "login_required를 빼야 한다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "context에 comments를 넣지 않아 detail 템플릿이 반복문에서 실패합니다. article.comment_set.all() 을 추가해야 합니다.",
+        },
+        {
+          title: "문제 39. 좋아요가 GET으로 토글됨",
+          prompt:
+            "db_hw_6_4의 likes 뷰는 아래와 같아 GET 요청만으로 좋아요 상태가 바뀝니다. 근본 원인은 무엇인가요?",
+          file: "db_hw_6_4/articles/views.py:likes",
+          code: `@login_required
+def likes(request, article_pk):
+    article = Article.objects.get(pk=article_pk)
+    if request.user in article.like_users.all():
+        article.like_users.remove(request.user)
+    else:
+        article.like_users.add(request.user)
+    return redirect('articles:index')`,
+          options: [
+            {
+              id: "a",
+              text: "like_users 필드가 symmetrical=True여야 한다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "뷰가 POST 전용으로 제한돼 있지 않아 GET 요청도 상태를 바꾼다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "redirect가 detail이어야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "Article.objects.get이 항상 None을 돌려준다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "likes 뷰에도 메서드 검증이 없어 GET 요청만으로 좋아요를 변경할 수 있습니다. require_POST를 붙여야 합니다.",
+        },
+        {
+          title: "문제 40. 존재하지 않는 프로필 접근 시 500",
+          prompt:
+            "db_hw_6_4에서 `/accounts/profile/notfound/` 로 접근하면 500이 납니다. profile 뷰는 아래와 같습니다. 어떤 조치가 필요할까요?",
+          file: "db_hw_6_4/accounts/views.py:profile",
+          code: `def profile(request, username):
+    User = get_user_model()
+    person = User.objects.get(username=username)
+    context = {
+        "person": person,
+    }
+    return render(request, "accounts/profile.html", context)`,
+          options: [
+            {
+              id: "a",
+              text: "User 모델에 username 필드가 없다.",
+              correct: false,
+            },
+            {
+              id: "b",
+              text: "없는 username에 대한 404 처리가 없다.",
+              correct: true,
+            },
+            {
+              id: "c",
+              text: "context가 리스트여야 한다.",
+              correct: false,
+            },
+            {
+              id: "d",
+              text: "템플릿 경로가 틀렸다.",
+              correct: false,
+            },
+          ],
+          explanation:
+            "User.objects.get가 실패하면 DoesNotExist를 던져 500이 됩니다. get_object_or_404 등으로 404를 반환해야 합니다.",
+        },
+      ];
+
+      const quizData = shuffle(quizPool);
+
+      const state = {
+        currentIndex: 0,
+        score: 0,
+        answered: false,
+      };
+
+      const questionProgress = document.getElementById("question-progress");
+      const questionTitle = document.getElementById("question-title");
+      const questionText = document.getElementById("question-text");
+      const questionCode = document.getElementById("question-code");
+      const codeWrapper = document.getElementById("code-wrapper");
+      const optionsFieldset = document.getElementById("options-fieldset");
+      const checkBtn = document.getElementById("check-answer");
+      const nextBtn = document.getElementById("next-question");
+      const feedbackEl = document.getElementById("feedback");
+      const explanationEl = document.getElementById("explanation");
+      const scoreLabel = document.getElementById("score-label");
+      const statusLabel = document.getElementById("status-label");
+      const completionSection = document.getElementById("completion");
+      const quizSection = document.getElementById("quiz-section");
+      const finalScore = document.getElementById("final-score");
+      const retryBtn = document.getElementById("retry");
+
+      const optionsForm = document.getElementById("options-form");
+      optionsForm.addEventListener("change", () => {
+        if (!state.answered) {
+          checkBtn.disabled = !optionsForm.querySelector(
+            "input[name='option']:checked"
+          );
+        }
+      });
+
+      checkBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        handleCheckAnswer();
+      });
+
+      nextBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (state.currentIndex === quizData.length - 1) {
+          showCompletion();
+        } else {
+          state.currentIndex += 1;
+          renderQuestion();
+        }
+      });
+
+      retryBtn.addEventListener("click", () => {
+        state.currentIndex = 0;
+        state.score = 0;
+        renderQuestion();
+        completionSection.classList.add("hidden");
+        quizSection.classList.remove("hidden");
+      });
+
+      function renderQuestion() {
+        const question = quizData[state.currentIndex];
+        state.answered = false;
+        questionTitle.textContent = `${question.title} (${question.file})`;
+        questionText.textContent = question.prompt;
+        questionCode.textContent = question.code.trim();
+        codeWrapper.classList.toggle("hidden", !question.code);
+
+        questionProgress.textContent = `문제 ${
+          state.currentIndex + 1
+        } / ${quizData.length}`;
+        statusLabel.textContent = `현재 문제: ${state.currentIndex + 1}`;
+
+        optionsFieldset.innerHTML = "";
+        question.options.forEach((option) => {
+          const optionId = `option-${question.title}-${option.id}`;
+          const wrapper = document.createElement("label");
+          wrapper.setAttribute("for", optionId);
+          wrapper.innerHTML = `
+            <input type="radio" name="option" id="${optionId}" value="${option.id}" />
+            <span>${option.text}</span>`;
+          optionsFieldset.appendChild(wrapper);
+        });
+
+        optionsForm.reset();
+        feedbackEl.classList.add("hidden");
+        explanationEl.classList.add("hidden");
+        checkBtn.disabled = true;
+        nextBtn.disabled = true;
+        nextBtn.textContent =
+          state.currentIndex === quizData.length - 1 ? "결과 보기" : "다음 문제";
+      }
+
+      function handleCheckAnswer() {
+        if (state.answered) {
+          return;
+        }
+
+        const selected = optionsForm.querySelector("input[name='option']:checked");
+        if (!selected) {
+          return;
+        }
+
+        const question = quizData[state.currentIndex];
+        const picked = question.options.find(
+          (option) => option.id === selected.value
+        );
+
+        const isCorrect = Boolean(picked?.correct);
+        if (isCorrect) {
+          state.score += 1;
+          feedbackEl.textContent = "정답입니다! 정확히 원인을 짚어냈어요.";
+          feedbackEl.classList.remove("incorrect");
+          feedbackEl.classList.add("correct");
+        } else {
+          feedbackEl.textContent = "아쉽습니다. 로그와 코드를 다시 연결해 보세요.";
+          feedbackEl.classList.remove("correct");
+          feedbackEl.classList.add("incorrect");
+        }
+
+        scoreLabel.textContent = `정답 수: ${state.score}`;
+        feedbackEl.classList.remove("hidden");
+        explanationEl.textContent = question.explanation;
+        explanationEl.classList.remove("hidden");
+        state.answered = true;
+        checkBtn.disabled = true;
+        nextBtn.disabled = false;
+      }
+
+      function showCompletion() {
+        quizSection.classList.add("hidden");
+        completionSection.classList.remove("hidden");
+        finalScore.textContent = `총 ${quizData.length}문제 중 ${state.score}문제를 맞혔습니다.`;
+      }
+
+      renderQuestion();
+    </script>
+  </body>
+</html>
